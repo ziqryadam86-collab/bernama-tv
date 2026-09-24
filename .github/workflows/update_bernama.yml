@@ -30,41 +30,22 @@ jobs:
         run: |
           echo "$COOKIES_DATA" > cookies.txt
 
-      - name: Extract Resolutions and Build Master M3U8
+      - name: Extract 360p and 480p Streams and Build M3U8
         run: |
           mkdir -p "smil:bernama/pass:bernama24"
           TARGET_FILE="smil:bernama/pass:bernama24/playlist.m3u8"
 
           YT_URL="https://www.youtube.com/live/eGD2SjmivoI"
 
-          # Ekstrak URL mengikut kualiti spesifik
-          URL_95=$(yt-dlp --cookies cookies.txt --js-runtimes deno -g -f 95 "$YT_URL" 2>/dev/null | head -n 1 || true)
+          # Ekstrak URL 480p (itag 94) & 360p (itag 93)
           URL_94=$(yt-dlp --cookies cookies.txt --js-runtimes deno -g -f 94 "$YT_URL" 2>/dev/null | head -n 1 || true)
           URL_93=$(yt-dlp --cookies cookies.txt --js-runtimes deno -g -f 93 "$YT_URL" 2>/dev/null | head -n 1 || true)
-          URL_92=$(yt-dlp --cookies cookies.txt --js-runtimes deno -g -f 92 "$YT_URL" 2>/dev/null | head -n 1 || true)
-          URL_91=$(yt-dlp --cookies cookies.txt --js-runtimes deno -g -f 91 "$YT_URL" 2>/dev/null | head -n 1 || true)
 
-          # Ekstrak Master Live Stream URL utama jika format terpisah bermasalah
-          URL_MASTER=$(yt-dlp --cookies cookies.txt --js-runtimes deno -g -f "b" "$YT_URL" 2>/dev/null | head -n 1 || true)
-
+          # Bina Master M3U8 baharu
           echo "#EXTM3U" > "$TARGET_FILE"
           echo "#EXT-X-VERSION:3" >> "$TARGET_FILE"
 
-          # 1. UTAMA: 720p diletakkan di bahagian Paling Atas
-          case "$URL_95" in
-            http*)
-              echo '#EXT-X-STREAM-INF:BANDWIDTH=2800000,RESOLUTION=1280x720' >> "$TARGET_FILE"
-              echo "$URL_95" >> "$TARGET_FILE"
-              ;;
-            *)
-              if [ -n "$URL_MASTER" ]; then
-                echo '#EXT-X-STREAM-INF:BANDWIDTH=2800000,RESOLUTION=1280x720' >> "$TARGET_FILE"
-                echo "$URL_MASTER" >> "$TARGET_FILE"
-              fi
-              ;;
-          esac
-
-          # 2. 480p
+          # Priority 1: 480p
           case "$URL_94" in
             http*)
               echo '#EXT-X-STREAM-INF:BANDWIDTH=1400000,RESOLUTION=854x480' >> "$TARGET_FILE"
@@ -72,27 +53,11 @@ jobs:
               ;;
           esac
 
-          # 3. 360p
+          # Priority 2: 360p
           case "$URL_93" in
             http*)
               echo '#EXT-X-STREAM-INF:BANDWIDTH=800000,RESOLUTION=640x360' >> "$TARGET_FILE"
               echo "$URL_93" >> "$TARGET_FILE"
-              ;;
-          esac
-
-          # 4. 240p
-          case "$URL_92" in
-            http*)
-              echo '#EXT-X-STREAM-INF:BANDWIDTH=400000,RESOLUTION=426x240' >> "$TARGET_FILE"
-              echo "$URL_92" >> "$TARGET_FILE"
-              ;;
-          esac
-
-          # 5. 144p (Paling bawah)
-          case "$URL_91" in
-            http*)
-              echo '#EXT-X-STREAM-INF:BANDWIDTH=200000,RESOLUTION=256x144' >> "$TARGET_FILE"
-              echo "$URL_91" >> "$TARGET_FILE"
               ;;
           esac
 
@@ -101,6 +66,6 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git add "smil:bernama/pass:bernama24/playlist.m3u8"
-          git commit -m "Fix resolution order (720p first) and live stream buffering [skip ci]" || exit 0
+          git commit -m "Optimize playlist to 360p and 480p only [skip ci]" || exit 0
           git push
           
