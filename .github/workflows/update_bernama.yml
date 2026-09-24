@@ -1,88 +1,48 @@
-name: Build Multi-Quality HLS Master Playlist (Bernama TV)
-
-on:
-  schedule:
-    - cron: '*/5 * * * *'
-  workflow_dispatch:
-
-permissions:
-  contents: write
-
-jobs:
-  build-playlist:
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: Install Deno & yt-dlp
-        run: |
-          curl -fsSL https://deno.land/install.sh | sh
-          echo "/home/runner/.deno/bin" >> $GITHUB_PATH
-
-          sudo wget https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -O /usr/local/bin/yt-dlp
-          sudo chmod a+rx /usr/local/bin/yt-dlp
-
-      - name: Setup Cookies File
-        env:
-          COOKIES_DATA: ${{ secrets.YOUTUBE_COOKIES }}
-        run: |
-          echo "$COOKIES_DATA" > cookies.txt
-
       - name: Extract Resolutions (144p - 720p) and Build Master M3U8
         run: |
-          # 1. Cipta folder smil:bernama/pass:bernama24/
           mkdir -p "smil:bernama/pass:bernama24"
           TARGET_FILE="smil:bernama/pass:bernama24/playlist.m3u8"
 
           YT_URL="https://www.youtube.com/live/eGD2SjmivoI"
 
-          # 2. Ekstrak URL stream dari 144p hingga 720p (Format 91 hingga 95)
-          URL_91=$(yt-dlp --cookies cookies.txt --js-runtimes deno -g -f 91 "$YT_URL" || true)
-          URL_92=$(yt-dlp --cookies cookies.txt --js-runtimes deno -g -f 92 "$YT_URL" || true)
-          URL_93=$(yt-dlp --cookies cookies.txt --js-runtimes deno -g -f 93 "$YT_URL" || true)
-          URL_94=$(yt-dlp --cookies cookies.txt --js-runtimes deno -g -f 94 "$YT_URL" || true)
-          URL_95=$(yt-dlp --cookies cookies.txt --js-runtimes deno -g -f 95 "$YT_URL" || true)
+          # Ekstrak URL stream bagi setiap format (ambil baris pertama sahaja untuk elak limpahan multiline)
+          URL_95=$(yt-dlp --cookies cookies.txt --js-runtimes deno -g -f 95 "$YT_URL" 2>/dev/null | head -n 1 || true)
+          URL_94=$(yt-dlp --cookies cookies.txt --js-runtimes deno -g -f 94 "$YT_URL" 2>/dev/null | head -n 1 || true)
+          URL_93=$(yt-dlp --cookies cookies.txt --js-runtimes deno -g -f 93 "$YT_URL" 2>/dev/null | head -n 1 || true)
+          URL_92=$(yt-dlp --cookies cookies.txt --js-runtimes deno -g -f 92 "$YT_URL" 2>/dev/null | head -n 1 || true)
+          URL_91=$(yt-dlp --cookies cookies.txt --js-runtimes deno -g -f 91 "$YT_URL" 2>/dev/null | head -n 1 || true)
 
-          # 3. Cipta fail Master M3U8
+          # Mula bina Master M3U8
           echo "#EXTM3U" > "$TARGET_FILE"
+          echo "#EXT-X-VERSION:3" >> "$TARGET_FILE"
 
-          # 144p
-          if [ -n "$URL_91" ]; then
-            echo '#EXT-X-STREAM-INF:BANDWIDTH=200000,RESOLUTION=256x144' >> "$TARGET_FILE"
-            echo "$URL_91" >> "$TARGET_FILE"
-          fi
-
-          # 240p
-          if [ -n "$URL_92" ]; then
-            echo '#EXT-X-STREAM-INF:BANDWIDTH=400000,RESOLUTION=426x240' >> "$TARGET_FILE"
-            echo "$URL_92" >> "$TARGET_FILE"
-          fi
-
-          # 360p
-          if [ -n "$URL_93" ]; then
-            echo '#EXT-X-STREAM-INF:BANDWIDTH=800000,RESOLUTION=640x360' >> "$TARGET_FILE"
-            echo "$URL_93" >> "$TARGET_FILE"
-          fi
-
-          # 480p
-          if [ -n "$URL_94" ]; then
-            echo '#EXT-X-STREAM-INF:BANDWIDTH=1400000,RESOLUTION=854x480' >> "$TARGET_FILE"
-            echo "$URL_94" >> "$TARGET_FILE"
-          fi
-
-          # 720p
-          if [ -n "$URL_95" ]; then
+          # 720p (Keutamaan Pertama)
+          if [ -n "$URL_95" ] && [[ "$URL_95" == http* ]]; then
             echo '#EXT-X-STREAM-INF:BANDWIDTH=2800000,RESOLUTION=1280x720' >> "$TARGET_FILE"
             echo "$URL_95" >> "$TARGET_FILE"
           fi
 
-      - name: Commit and Push to Github
-        run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add "smil:bernama/pass:bernama24/playlist.m3u8"
-          git commit -m "Auto-update Multi-Quality (144p-720p) Playlist for Bernama TV [skip ci]" || exit 0
-          git push
+          # 480p
+          if [ -n "$URL_94" ] && [[ "$URL_94" == http* ]]; then
+            echo '#EXT-X-STREAM-INF:BANDWIDTH=1400000,RESOLUTION=854x480' >> "$TARGET_FILE"
+            echo "$URL_94" >> "$TARGET_FILE"
+          fi
+
+          # 360p
+          if [ -n "$URL_93" ] && [[ "$URL_93" == http* ]]; then
+            echo '#EXT-X-STREAM-INF:BANDWIDTH=800000,RESOLUTION=640x360' >> "$TARGET_FILE"
+            echo "$URL_93" >> "$TARGET_FILE"
+          fi
+
+          # 240p
+          if [ -n "$URL_92" ] && [[ "$URL_92" == http* ]]; then
+            echo '#EXT-X-STREAM-INF:BANDWIDTH=400000,RESOLUTION=426x240' >> "$TARGET_FILE"
+            echo "$URL_92" >> "$TARGET_FILE"
+          fi
+
+          # 144p
+          if [ -n "$URL_91" ] && [[ "$URL_91" == http* ]]; then
+            echo '#EXT-X-STREAM-INF:BANDWIDTH=200000,RESOLUTION=256x144' >> "$TARGET_FILE"
+            echo "$URL_91" >> "$TARGET_FILE"
+          fi
           
