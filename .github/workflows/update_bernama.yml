@@ -1,4 +1,4 @@
-name: Build Multi-Quality HLS Master Playlist (Bernama TV)
+name: Build Single 480p HLS Playlist (Bernama TV)
 
 on:
   schedule:
@@ -30,42 +30,31 @@ jobs:
         run: |
           echo "$COOKIES_DATA" > cookies.txt
 
-      - name: Extract 360p and 480p Streams and Build M3U8
+      - name: Extract Direct 480p Stream URL
         run: |
           mkdir -p "smil:bernama/pass:bernama24"
           TARGET_FILE="smil:bernama/pass:bernama24/playlist.m3u8"
 
           YT_URL="https://www.youtube.com/live/eGD2SjmivoI"
 
-          # Ekstrak URL 480p (itag 94) & 360p (itag 93)
-          URL_94=$(yt-dlp --cookies cookies.txt --js-runtimes deno -g -f 94 "$YT_URL" 2>/dev/null | head -n 1 || true)
-          URL_93=$(yt-dlp --cookies cookies.txt --js-runtimes deno -g -f 93 "$YT_URL" 2>/dev/null | head -n 1 || true)
+          # Ekstrak URL direct 480p (itag 94)
+          URL_480=$(yt-dlp --cookies cookies.txt --js-runtimes deno -g -f 94 "$YT_URL" 2>/dev/null | head -n 1 || true)
 
-          # Bina Master M3U8 baharu
+          # Jika itag 94 gagal, ambil aliran HLS terbaik sebagai backup
+          if [ -z "$URL_480" ] || [[ "$URL_480" != http* ]]; then
+            URL_480=$(yt-dlp --cookies cookies.txt --js-runtimes deno -g -f "b" "$YT_URL" 2>/dev/null | head -n 1 || true)
+          fi
+
+          # Tulis terus pautan m3u8 single-stream 480p
           echo "#EXTM3U" > "$TARGET_FILE"
           echo "#EXT-X-VERSION:3" >> "$TARGET_FILE"
-
-          # Priority 1: 480p
-          case "$URL_94" in
-            http*)
-              echo '#EXT-X-STREAM-INF:BANDWIDTH=1400000,RESOLUTION=854x480' >> "$TARGET_FILE"
-              echo "$URL_94" >> "$TARGET_FILE"
-              ;;
-          esac
-
-          # Priority 2: 360p
-          case "$URL_93" in
-            http*)
-              echo '#EXT-X-STREAM-INF:BANDWIDTH=800000,RESOLUTION=640x360' >> "$TARGET_FILE"
-              echo "$URL_93" >> "$TARGET_FILE"
-              ;;
-          esac
+          echo "$URL_480" >> "$TARGET_FILE"
 
       - name: Commit and Push to Github
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git add "smil:bernama/pass:bernama24/playlist.m3u8"
-          git commit -m "Optimize playlist to 360p and 480p only [skip ci]" || exit 0
+          git commit -m "Convert playlist to direct 480p single stream [skip ci]" || exit 0
           git push
           
