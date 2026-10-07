@@ -1,8 +1,9 @@
-Name: Build Custom HLS Master Playlist (Stream bernama_tv)
+name: Build Custom HLS Master Playlist (Stream bernama_tv)
 
 on:
   schedule:
-    - cron: '*/5 * * * *'
+    # Ditukar kepada setiap 7 minit
+    - cron: '*/7 * * * *'
   workflow_dispatch:
 
 permissions:
@@ -32,11 +33,11 @@ jobs:
 
       - name: Extract Video & Audio Streams and Build Master M3U8
         run: |
-          # Cipta direktori sasaran terlebih dahulu
+          # Buat direktori jika belum wujud
           TARGET_FILE="smil:bernama/pass:bernama24/index.m3u8"
           mkdir -p "$(dirname "$TARGET_FILE")"
 
-          # Ekstrak URL stream dari YouTube
+          # Ekstrak URL stream
           URLS=$(yt-dlp --cookies cookies.txt --js-runtimes deno -g "https://www.youtube.com/live/ZbZHFtDNX-Q?feature=shared" || true)
           
           VIDEO_URL=$(echo "$URLS" | sed -n '1p')
