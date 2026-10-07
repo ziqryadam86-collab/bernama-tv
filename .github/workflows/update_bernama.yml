@@ -1,4 +1,4 @@
-name: Auto Update Separated HLS Playlist
+Name: Build Custom HLS Master Playlist (Stream bernama_tv)
 
 on:
   schedule:
@@ -15,13 +15,12 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Install Deno & yt-dlp
         run: |
           curl -fsSL https://deno.land/install.sh | sh
           echo "/home/runner/.deno/bin" >> $GITHUB_PATH
+
           sudo wget https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -O /usr/local/bin/yt-dlp
           sudo chmod a+rx /usr/local/bin/yt-dlp
 
@@ -29,81 +28,43 @@ jobs:
         env:
           COOKIES_DATA: ${{ secrets.YOUTUBE_COOKIES }}
         run: |
-          echo "$COOKIES_DATA" > cookies.txt || true
+          echo "$COOKIES_DATA" > cookies.txt
 
-      - name: Extract Video, Audio, and Build Master M3U8
+      - name: Extract Video & Audio Streams and Build Master M3U8
         run: |
-          FOLDER_PATH="smil:bernama/pass:bernama24"
-          mkdir -p "$FOLDER_PATH"
-          
-          MASTER_FILE="$FOLDER_PATH/playlist.m3u8"
-          VIDEO_FILE="$FOLDER_PATH/video.m3u8"
-          AUDIO_FILE="$FOLDER_PATH/audio.m3u8"
-          
-          YT_URL="https://www.youtube.com/live/unVxJib34SI"
-          OFFLINE_M3U8="https://raw.githubusercontent.com/MIFNtechnology/YtM3u8/github-private/assets/info.m3u8"
+          # Cipta direktori sasaran terlebih dahulu
+          TARGET_FILE="smil:bernama/pass:bernama24/index.m3u8"
+          mkdir -p "$(dirname "$TARGET_FILE")"
 
-          # 1. Ekstrak Direct Link Video Sahaja & Audio Sahaja
-          VIDEO_URL=$(yt-dlp --cookies cookies.txt --js-runtimes deno -g -f "bestvideo[protocol=m3u8_native]/bestvideo" "$YT_URL" 2>/dev/null | head -n 1 || true)
-          AUDIO_URL=$(yt-dlp --cookies cookies.txt --js-runtimes deno -g -f "bestaudio[protocol=m3u8_native]/bestaudio" "$YT_URL" 2>/dev/null | head -n 1 || true)
+          # Ekstrak URL stream dari YouTube
+          URLS=$(yt-dlp --cookies cookies.txt --js-runtimes deno -g "https://www.youtube.com/live/ZbZHFtDNX-Q?feature=shared" || true)
+          
+          VIDEO_URL=$(echo "$URLS" | sed -n '1p')
+          AUDIO_URL=$(echo "$URLS" | sed -n '2p')
 
-          # Sekiranya gagal, cuba pautan gabungan biasa
           if [ -z "$VIDEO_URL" ]; then
-            VIDEO_URL=$(yt-dlp --cookies cookies.txt --js-runtimes deno -g -f "b/best" "$YT_URL" 2>/dev/null | head -n 1 || true)
-          fi
-
-          # 2. Semak jika pengekstrakan berjaya
-          if [ -n "$VIDEO_URL" ] && case "$VIDEO_URL" in http*) true;; *) false;; esac; then
-            echo "Penjana strim berjaya! Menulis video.m3u8, audio.m3u8, dan playlist.m3u8..."
-
-            # --- Bina video.m3u8 ---
-            {
-              echo "#EXTM3U"
-              echo "#EXT-X-VERSION:3"
-              echo "$VIDEO_URL"
-            } > "$VIDEO_FILE"
-
-            # --- Bina audio.m3u8 ---
-            if [ -n "$AUDIO_URL" ]; then
-              {
-                echo "#EXTM3U"
-                echo "#EXT-X-VERSION:3"
-                echo "$AUDIO_URL"
-              } > "$AUDIO_FILE"
-            else
-              # Jika tiada audio terpisah, gunakan pautan video sebagai fallback audio
-              cp "$VIDEO_FILE" "$AUDIO_FILE"
-            fi
-
-            # --- Bina Master playlist.m3u8 ---
-            {
-              echo "#EXTM3U"
-              echo "#EXT-X-VERSION:4"
-              echo "#EXT-X-INDEPENDENT-SEGMENTS"
-              echo '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="program_audio",NAME="Main Audio",DEFAULT=YES,AUTOSELECT=YES,LANGUAGE="ms",URI="https://ziqryadam86-collab.github.io/bernama-tv/smil:bernama/pass:bernama24/audio.m3u8"'
-              echo '#EXT-X-STREAM-INF:BANDWIDTH=1856404,AVERAGE-BANDWIDTH=1790800,CODECS="avc1.4d401f,mp4a.40.2",RESOLUTION=1280x720,AUDIO="program_audio"'
-              echo "https://ziqryadam86-collab.github.io/bernama-tv/smil:bernama/pass:bernama24/video.m3u8"
-            } > "$MASTER_FILE"
-
+            echo "#EXTM3U" > "$TARGET_FILE"
+          elif [ -z "$AUDIO_URL" ]; then
+            echo "#EXTM3U" > "$TARGET_FILE"
+            echo "#EXT-X-STREAM-INF:BANDWIDTH=3000000" >> "$TARGET_FILE"
+            echo "$VIDEO_URL" >> "$TARGET_FILE"
           else
-            echo "Stream offline. Menggunakan Fallback..."
-            {
-              echo "#EXTM3U"
-              echo "#EXT-X-VERSION:3"
-              echo "#EXT-X-STREAM-INF:BANDWIDTH=1400000,RESOLUTION=854x480"
-              echo "$OFFLINE_M3U8"
-            } > "$MASTER_FILE"
-            
-            echo "$OFFLINE_M3U8" > "$VIDEO_FILE"
-            echo "$OFFLINE_M3U8" > "$AUDIO_FILE"
+            echo "#EXTM3U" > "$TARGET_FILE"
+            echo '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio-main",NAME="Main",DEFAULT=YES,AUTOSELECT=YES,URI="'"$AUDIO_URL"'"' >> "$TARGET_FILE"
+            echo '#EXT-X-STREAM-INF:BANDWIDTH=3000000,AUDIO="audio-main"' >> "$TARGET_FILE"
+            echo "$VIDEO_URL" >> "$TARGET_FILE"
           fi
 
-      - name: Safe Commit and Push to Github
+      - name: Clean Up Cookies
+        if: always()
+        run: |
+          rm -f cookies.txt
+
+      - name: Commit and Push to Github
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add .
-          git commit -m "Update separated HLS streams (Master/Video/Audio) [skip ci]" || exit 0
-          git pull --rebase origin main || true
-          git push || true
+          git add "smil:bernama/pass:bernama24/index.m3u8"
+          git commit -m "Auto-update HLS Master Playlist for Bernama TV [skip ci]" || exit 0
+          git push
           
